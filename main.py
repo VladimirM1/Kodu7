@@ -157,5 +157,84 @@ if kiiruse_piirang != None:
 else:
   print("error")
 """
+reader = easyocr.Reader(['en'])
 
+def leia_kiirusepiirang(pilt):
+  pilt_copy = pilt.copy()
+  pilt = cv.resize(pilt, (64,64))
+  pilt = np.expand_dims(pilt, axis=0) / 255.0
 
+  predictions = mudel.predict(pilt)
+  predicted_kirjed = label_encoder.inverse_transform([np.argmax(predictions)])
+
+  if 'speedlimit' in predicted_kirjed:
+    pilt_copy_conv = (pilt_copy * 255).astype(np.uint8)
+    kiirusepiirang_vaartus = reader.readtext(pilt_copy_conv, detail=0)
+    print(kiirusepiirang_vaartus)
+    return kiirusepiirang_vaartus
+
+  return None
+
+test_kiiruse_piirang = load_img('signs/images/road641.png')
+plt.imshow(test_kiiruse_piirang)
+test_pilt_array = img_to_array(test_kiiruse_piirang)
+kiiruse_piirang = leia_kiirusepiirang(test_pilt_array)
+if kiiruse_piirang != None:
+  print(kiiruse_piirang)
+else:
+  print("error")
+
+# Video
+import moviepy.editor as mp
+import IPython.display as ipd
+from IPython.display import HTML
+from base64 import b64encode
+
+#testvideo link: https://www.facebook.com/nztanorthland/videos/stop-signs-mean-come-to-a-complete-stop/378878694721033/
+
+videofile = "signs/testvideo.mp4"
+video_clip = mp.VideoFileClip(videofile)
+
+def show_video(video_path, video_width = 600):
+  video_file = open(video_path, "r+b").read()
+  video_url = f"data:video/mp4;base64,{b64encode(video_file).decode()}"
+  return HTML(f"""<video width={video_width} controls><source src="{video_url}"></video>""")
+
+show_video(videofile)
+
+def leia_märke_videost(videofile):
+  yolo = YOLO("yolov9c.pt")
+  video_clip = mp.VideoFileClip(videofile)
+  names = yolo.names
+  signs = []
+  for i in range(round(video_clip.duration)):
+    frame = video_clip.get_frame(i)
+    predictions = yolo.predict(frame)
+    img = frame
+    for i in range(len(predictions[0].boxes.cls)):
+      name = names[int(predictions[0].boxes.cls[i])]
+      if name != "stop sign" and name != "traffic light":
+        continue
+      #print(name)
+      coords = [int(x) for x in predictions[0].boxes.xyxy[i]]
+      cropped = img[coords[1]:coords[3], coords[0]:coords[2]]
+      signs.append(cropped)
+      #cv2_imshow(cropped)
+
+  kirjed = []
+  for sign in signs:
+    cv2_imshow(sign)
+    sign = img_to_array(sign)
+    sign = cv.resize(sign,(64,64))
+    sign = np.expand_dims(sign, axis=0) / 255.0
+    predictions = mudel.predict(sign)
+    predicted_kirje = label_encoder.inverse_transform([np.argmax(predictions)])
+    print(predicted_kirje)
+    kirjed.append(predicted_kirje)
+
+  kirjed = np.unique(kirjed)
+  return kirjed
+
+videofile = "signs/testvideo.mp4"
+märgid = leia_märke_videost(videofile)
+print(märgid)
