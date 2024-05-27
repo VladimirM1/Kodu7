@@ -223,7 +223,7 @@ def leia_märke_videost(videofile):
 
   kirjed = []
   for sign in signs:
-    cv2_imshow(sign)
+    #cv2_imshow(sign)
     sign = img_to_array(sign)
     sign = cv.resize(sign,(64,64))
     sign = np.expand_dims(sign, axis=0) / 255.0
