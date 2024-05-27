@@ -1,23 +1,20 @@
 # Moodulite installeerimine ja importimine
-import os
+import pandas as pd
 
 from ultralytics import YOLO
 import cv2 as cv
 import numpy as np
 import matplotlib
 from matplotlib import pyplot as plt
-model = YOLO("yolov9c.pt")
-
-# Colabis vajalik teek piltide näitamiseks
-#from google.colab.patches import cv2_imshow
 
 # Moodulite importimine (klassifitseerimine ja tehisnärvivõrgud)
 import tensorflow.keras
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import Input, Conv2D, Activation, Flatten, Dense, MaxPooling2D, Dropout
+from tensorflow.keras.layers import Input, Conv2D, Activation, Flatten, Dense, MaxPooling2D, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
+from tensorflow.keras.models import load_model
 
 
 #Import vajalik selleks, et XML faili töödelda läbi
@@ -27,8 +24,12 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 
 import easyocr
+import re
+import os
 
-#Proov
+#Selles osas on preprocess. Siin võtame kõik failid, mis meil andmetes on ja käime neid läbi salvestades vajaliku informatsiooni.
+#Annotatsioonides on kirjas mis tüüpi märgiga on tegu ning kus see asub.
+#Selleks, et oleks lihtsam kasutasime pilte, millel on ainult üks märk.
 
 annotatsioonid = 'signs/annotations/'
 
@@ -92,14 +93,18 @@ kirjed = to_categorical(kirjed)
 print(images.shape)
 print(kirjed.shape)
 
+#Siin jagame andmed mudeli jaoks
 X_train, X_val, y_train, y_val = train_test_split(images,kirjed, test_size=0.2, random_state=42)
 
 mudel = Sequential([
     Conv2D(32, (3,3), activation='relu', input_shape=(64,64,3)),
-    MaxPooling2D((2,2)),
+    Dense(128, activation='relu'),
+    BatchNormalization(),
     Conv2D(64, (3,3), activation='relu'),
+    Dense(128, activation='relu'),
     MaxPooling2D((2,2)),
     Conv2D(128, (3,3), activation='relu'),
+    Dense(128, activation='relu'),
     MaxPooling2D((2,2)),
     Flatten(),
     Dense(128, activation='relu'),
@@ -107,12 +112,17 @@ mudel = Sequential([
     Dense(len(label_encoder.classes_), activation='softmax')
 ])
 mudel.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-history = mudel.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val), batch_size=32)
+history = mudel.fit(X_train, y_train, epochs=20, validation_data=(X_val, y_val), batch_size=64)
 
 #loss, accuracy = mudel.evaluate(X_val, y_val)
 #print(accuracy)
 
-test_image = load_img('signs/test1.jpg')
+#Mudeli salvestamine
+mudel.save('mudel.keras')
+
+mudel = load_model('mudel.keras')
+
+test_image = load_img('signs/images/road120.png')
 plt.imshow(test_image)
 test_image = img_to_array(test_image)
 test_image = cv.resize(test_image,(64,64))
@@ -121,44 +131,16 @@ predictions = mudel.predict(test_image)
 predicted_kirje = label_encoder.inverse_transform([np.argmax(predictions)])
 print(predicted_kirje)
 
-test_image = load_img('signs/test2.jpg.webp')
-plt.imshow(test_image)
-test_image = img_to_array(test_image)
-test_image = cv.resize(test_image,(64,64))
-test_image = np.expand_dims(test_image, axis=0) / 255.0
-predictions = mudel.predict(test_image)
-predicted_kirje = label_encoder.inverse_transform([np.argmax(predictions)])
-print(predicted_kirje)
+#test_image = load_img('signs/test2.jpg.webp')
+#plt.imshow(test_image)
+#test_image = img_to_array(test_image)
+#test_image = cv.resize(test_image,(64,64))
+#test_image = np.expand_dims(test_image, axis=0) / 255.0
+#predictions = mudel.predict(test_image)
+#predicted_kirje = label_encoder.inverse_transform([np.argmax(predictions)])
+#print(predicted_kirje)
 
-reader = easyocr.Reader(['en'])
-
-import re
-
-def leia_kiirusepiirang(pilt):
-  pilt_copy = pilt.copy()
-  pilt = cv.resize(pilt, (64,64))
-  pilt = np.expand_dims(pilt, axis=0) / 255.0
-
-  predictions = mudel.predict(pilt)
-  predicted_kirjed = label_encoder.inverse_transform([np.argmax(predictions)])
-
-  if 'speedlimit' in predicted_kirjed:
-    pilt_copy_conv = (pilt_copy * 255).astype(np.uint8)
-    kiirusepiirang_vaartus = reader.readtext(pilt_copy_conv, detail=0)
-    print(kiirusepiirang_vaartus)
-    return kiirusepiirang_vaartus
-
-  return None
-
-test_kiiruse_piirang = load_img('signs/test70.jpg')
-plt.imshow(test_kiiruse_piirang)
-test_pilt_array = img_to_array(test_kiiruse_piirang)
-kiiruse_piirang = leia_kiirusepiirang(test_pilt_array)
-if kiiruse_piirang != None:
-  print(kiiruse_piirang)
-else:
-  print("error")
-
+#Siin üritasime tuvastatud speedlimit ehk kiirusepiirangu märgilt tuvastada
 reader = easyocr.Reader(['en'])
 
 def leia_kiirusepiirang(pilt):
@@ -228,16 +210,20 @@ def leia_märke_videost(videofile):
       signs.append(cropped)
       #cv2_imshow(cropped)
 
+
+#Kuna YOLOs ei ole kiirusepiiranu klassi, siis me ei jõudnud seda siia kuidagi teisiti integreerida.
   kirjed = []
   for sign in signs:
-    #cv2_imshow(sign)
+    pilttt = sign
     sign = img_to_array(sign)
     sign = cv.resize(sign,(64,64))
     sign = np.expand_dims(sign, axis=0) / 255.0
     predictions = mudel.predict(sign)
     predicted_kirje = label_encoder.inverse_transform([np.argmax(predictions)])
-    print(predicted_kirje)
-    kirjed.append(predicted_kirje)
+    if predicted_kirje[0] != 'speedlimit':
+      #cv2_imshow(pilttt)
+      print(predicted_kirje)
+      kirjed.append(predicted_kirje)
 
   kirjed = np.unique(kirjed)
   return kirjed
@@ -258,16 +244,21 @@ def detect_roadsign(imagepath):
     test_image = np.expand_dims(test_image, axis=0) / 255.0
     predictions = mudel.predict(test_image)
     predicted_kirje = label_encoder.inverse_transform([np.argmax(predictions)])
-    test_kiiruse_piirang = load_img(imagepath)
-    test_pilt_array = img_to_array(test_kiiruse_piirang)
-    kiirusepiirangud = leia_kiirusepiirang(test_pilt_array)
-    if kiirusepiirangud[0] > 300:
-        piirang = kiirusepiirangud[1]
+    if predicted_kirje == "speedlimit":
+        test_kiiruse_piirang = load_img(imagepath)
+        test_pilt_array = img_to_array(test_kiiruse_piirang)
+        kiirusepiirangud = leia_kiirusepiirang(test_pilt_array)
+        if kiirusepiirangud is None:
+            return predicted_kirje[0].title() + " (Ei suutnud kiiruse numbrit lugeda)"
+        if kiirusepiirangud[0] > 300:
+            piirang = kiirusepiirangud[1]
+        else:
+            piirang = kiirusepiirangud[0]
+        tagastatav = predicted_kirje[0].title() + " " + str(piirang)
+        print(tagastatav)
+        return tagastatav
     else:
-        piirang = kiirusepiirangud[0]
-    tagastatav = predicted_kirje[0].title() + " " + str(piirang)
-    print(tagastatav)
-    return tagastatav
+        return predicted_kirje[0].title()
 
 class RoadsignsDetector(tk.Tk):
     def __init__(self):
@@ -297,9 +288,6 @@ class RoadsignsDetector(tk.Tk):
             self.image_label.configure(image=photo)
             self.image_label.image = photo
             self.text_display.configure(text=detect_roadsign(file_path).title())
-
-
-
 
 if __name__ == "__main__":
     app = RoadsignsDetector()
