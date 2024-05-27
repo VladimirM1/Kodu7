@@ -4,6 +4,7 @@ import pandas as pd
 from ultralytics import YOLO
 import cv2 as cv
 import numpy as np
+import joblib
 import matplotlib
 from matplotlib import pyplot as plt
 
@@ -86,6 +87,7 @@ images = np.array(images, dtype='float32') / 255.0
 kirjed = np.array(kirjed)
 label_encoder = LabelEncoder()
 kirjed = label_encoder.fit_transform(kirjed)
+joblib.dump(label_encoder, 'label_encoder.pkl')
 kirjed = to_categorical(kirjed)
 
 #print(annotatsioonid_cnt)
